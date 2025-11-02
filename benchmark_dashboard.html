@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>회사 분류 및 벤치마킹 대시보드</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f5f7fa;
+            padding: 20px;
+        }
+        
+        .header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+            margin-bottom: 30px;
+        }
+        
+        .header h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .company-info {
+            display: flex;
+            gap: 30px;
+            margin-top: 20px;
+        }
+        
+        .info-badge {
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-weight: 600;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .size-badge {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .industry-badge {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        
+        .main-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        .panel {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+        }
+        
+        .panel h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.4em;
+        }
+        
+        .classification-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .classification-table th,
+        .classification-table td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .classification-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #666;
+        }
+        
+        .size-indicator {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            margin-right: 8px;
+        }
+        
+        .size-large { background: #3b82f6; }
+        .size-mid { background: #10b981; }
+        .size-small { background: #f59e0b; }
+        .size-micro { background: #ef4444; }
+        
+        .benchmark-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .benchmark-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+        
+        .benchmark-group {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .percentile {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .benchmark-bar {
+            height: 30px;
+            background: #e0e0e0;
+            border-radius: 15px;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .benchmark-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            display: flex;
+            align-items: center;
+            justify-content: flex-end;
+            padding-right: 10px;
+            color: white;
+            font-weight: 600;
+            font-size: 12px;
+            transition: width 0.5s ease;
+        }
+        
+        .company-marker {
+            position: absolute;
+            top: -5px;
+            width: 40px;
+            height: 40px;
+            background: #ff6b6b;
+            border: 3px solid white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 12px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+        
+        .stat-value {
+            font-size: 28px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        
+        .stat-label {
+            color: #666;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 20px;
+        }
+        
+        .industry-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin-top: 20px;
+        }
+        
+        .industry-item {
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+        
+        .industry-item:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        .industry-name {
+            font-weight: 600;
+            margin-bottom: 5px;
+        }
+        
+        .industry-count {
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        
+        .transition-arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: #667eea;
+            margin: 20px 0;
+        }
+        
+        @media (max-width: 1024px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .stats-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 헤더 -->
+        <div class="header">
+            <h1>📊 회사 분류 및 벤치마킹 분석</h1>
+            <p style="color: #666;">효단님의 Insight Group - 통합 설문 시스템</p>
+            
+            <div class="company-info">
+                <div>
+                    <strong>분석 대상:</strong> 매일유업
+                </div>
+                <div class="info-badge size-badge">
+                    <span class="size-indicator size-mid"></span>
+                    중견기업
+                </div>
+                <div class="info-badge industry-badge">
+                    🏭 식품제조업
+                </div>
+                <div>
+                    <strong>매출:</strong> 2,500억원
+                </div>
+                <div>
+                    <strong>직원:</strong> 3,500명
+                </div>
+            </div>
+        </div>
+        
+        <!-- 메인 그리드 -->
+        <div class="main-grid">
+            <!-- 회사 규모 분류 -->
+            <div class="panel">
+                <h2>회사 규모 분류 기준</h2>
+                <table class="classification-table">
+                    <thead>
+                        <tr>
+                            <th>구분</th>
+                            <th>매출액</th>
+                            <th>직원수</th>
+                            <th>회사 수</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td><span class="size-indicator size-large"></span>대기업</td>
+                            <td>1,500억↑</td>
+                            <td>300명↑</td>
+                            <td>12개사</td>
+                        </tr>
+                        <tr style="background: #f0f7ff;">
+                            <td><span class="size-indicator size-mid"></span><strong>중견기업</strong></td>
+                            <td><strong>400~1,500억</strong></td>
+                            <td><strong>50~299명</strong></td>
+                            <td><strong>35개사</strong></td>
+                        </tr>
+                        <tr>
+                            <td><span class="size-indicator size-small"></span>중소기업</td>
+                            <td>100~400억</td>
+                            <td>10~49명</td>
+                            <td>48개사</td>
+                        </tr>
+                        <tr>
+                            <td><span class="size-indicator size-micro"></span>소기업</td>
+                            <td>100억 미만</td>
+                            <td>10명 미만</td>
+                            <td>25개사</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <div class="transition-arrow">
+                    소기업 → 중소기업 → <strong style="color: #10b981;">중견기업</strong> → 대기업
+                </div>
+            </div>
+            
+            <!-- 업종 분류 -->
+            <div class="panel">
+                <h2>업종별 분포</h2>
+                <div class="industry-grid">
+                    <div class="industry-item">
+                        <div class="industry-name">🔌 전기전자</div>
+                        <div class="industry-count">15개사</div>
+                    </div>
+                    <div class="industry-item">
+                        <div class="industry-name">🚗 자동차</div>
+                        <div class="industry-count">8개사</div>
+                    </div>
+                    <div class="industry-item" style="background: #667eea; color: white;">
+                        <div class="industry-name">🍽️ 식품/음료</div>
+                        <div class="industry-count">12개사 (현재)</div>
+                    </div>
+                    <div class="industry-item">
+                        <div class="industry-name">💊 화학/제약</div>
+                        <div class="industry-count">10개사</div>
+                    </div>
+                    <div class="industry-item">
+                        <div class="industry-name">💻 IT/SW</div>
+                        <div class="industry-count">22개사</div>
+                    </div>
+                    <div class="industry-item">
+                        <div class="industry-name">💰 금융/보험</div>
+                        <div class="industry-count">18개사</div>
+                    </div>
+                    <div class="industry-item">
+                        <div class="industry-name">🏬 유통/물류</div>
+                        <div class="industry-count">14개사</div>
+                    </div>
+                    <div class="industry-item">
+                        <div class="industry-name">💼 컨설팅</div>
+                        <div class="industry-count">6개사</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 벤치마킹 분석 -->
+        <div class="panel">
+            <h2>벤치마킹 분석 결과</h2>
+            
+            <div class="benchmark-card">
+                <div class="benchmark-header">
+                    <span class="benchmark-group">전체 기업 (120개사)</span>
+                    <span class="percentile">상위 28%</span>
+                </div>
+                <div class="benchmark-bar">
+                    <div class="benchmark-fill" style="width: 72%;">4.10점</div>
+                    <div class="company-marker" style="left: 72%;">매일</div>
+                </div>
+            </div>
+            
+            <div class="benchmark-card">
+                <div class="benchmark-header">
+                    <span class="benchmark-group">중견기업 그룹 (35개사)</span>
+                    <span class="percentile">상위 23%</span>
+                </div>
+                <div class="benchmark-bar">
+                    <div class="benchmark-fill" style="width: 77%;">4.10점</div>
+                    <div class="company-marker" style="left: 77%;">매일</div>
+                </div>
+            </div>
+            
+            <div class="benchmark-card">
+                <div class="benchmark-header">
+                    <span class="benchmark-group">식품제조업 그룹 (12개사)</span>
+                    <span class="percentile">상위 33%</span>
+                </div>
+                <div class="benchmark-bar">
+                    <div class="benchmark-fill" style="width: 67%;">4.10점</div>
+                    <div class="company-marker" style="left: 67%;">매일</div>
+                </div>
+            </div>
+            
+            <div class="benchmark-card">
+                <div class="benchmark-header">
+                    <span class="benchmark-group">중견+식품 그룹 (5개사)</span>
+                    <span class="percentile">2위</span>
+                </div>
+                <div class="benchmark-bar">
+                    <div class="benchmark-fill" style="width: 80%;">4.10점</div>
+                    <div class="company-marker" style="left: 80%;">매일</div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 통계 요약 -->
+        <div class="main-grid">
+            <div class="panel">
+                <h2>규모별 주요 지표</h2>
+                <div class="chart-container">
+                    <canvas id="sizeChart"></canvas>
+                </div>
+            </div>
+            
+            <div class="panel">
+                <h2>업종별 평균 점수</h2>
+                <div class="chart-container">
+                    <canvas id="industryChart"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 핵심 지표 -->
+        <div class="panel">
+            <h2>핵심 벤치마킹 지표</h2>
+            <div class="stats-grid">
+                <div class="stat-item">
+                    <div class="stat-value">4.10</div>
+                    <div class="stat-label">우리 회사 평균</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">3.95</div>
+                    <div class="stat-label">중견기업 평균</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">4.05</div>
+                    <div class="stat-label">식품업계 평균</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">+0.15</div>
+                    <div class="stat-label">중견 대비 격차</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">+0.05</div>
+                    <div class="stat-label">업종 대비 격차</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-value">72%</div>
+                    <div class="stat-label">전체 백분위</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        // 규모별 차트
+        const sizeCtx = document.getElementById('sizeChart').getContext('2d');
+        new Chart(sizeCtx, {
+            type: 'bar',
+            data: {
+                labels: ['대기업', '중견기업', '중소기업', '소기업'],
+                datasets: [{
+                    label: '평균 점수',
+                    data: [4.2, 3.95, 3.7, 3.5],
+                    backgroundColor: [
+                        '#3b82f6',
+                        '#10b981',
+                        '#f59e0b',
+                        '#ef4444'
+                    ],
+                    borderWidth: 0
+                }, {
+                    label: '매일유업',
+                    data: [null, 4.10, null, null],
+                    backgroundColor: '#ff6b6b',
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: false,
+                        min: 3.0,
+                        max: 4.5
+                    }
+                }
+            }
+        });
+        
+        // 업종별 차트
+        const industryCtx = document.getElementById('industryChart').getContext('2d');
+        new Chart(industryCtx, {
+            type: 'horizontalBar',
+            data: {
+                labels: ['IT/SW', '금융/보험', '전기전자', '식품/음료', '자동차', '유통/물류', '화학/제약'],
+                datasets: [{
+                    label: '평균 점수',
+                    data: [4.3, 4.15, 4.1, 4.05, 4.0, 3.9, 3.85],
+                    backgroundColor: '#667eea',
+                    borderWidth: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        beginAtZero: false,
+                        min: 3.5,
+                        max: 4.5
+                    }
+                },
+                plugins: {
+                    datalabels: {
+                        anchor: 'end',
+                        align: 'right'
+                    }
+                }
+            }
+        });
+    </script>
+</body>
+</html>

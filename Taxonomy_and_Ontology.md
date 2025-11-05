@@ -1,8 +1,9 @@
 # 설문 데이터 분류 체계: Taxonomy and Ontology 시스템
 
-**작성일**: 2025-01-02
-**버전**: 1.0
-**대상**: 기술팀, 운영팀, 경영진
+**작성일**: 2025-11-05
+**버전**: 1.1
+**대상**: AI Lab
+**최종 수정**: 2025-11-05 - 온톨로지 관계 기반 척도 정의로 개정
 
 ---
 
@@ -12,7 +13,12 @@
 설문 조사 문항의 분류 체계는 **고정된 계층 구조로는 관리할 수 없을 정도로 복잡하고 동적**입니다. 조직진단(OD)만 해도 대분류 10-15개, 각각의 중분류 3-10개, 소분류 2-5개로 수백~수천 가지 조합이 가능하며, 매년 새로운 개념(ESG, 디지털전환, 심리적 안전 등)이 등장하고 고객사마다 특화된 분류를 요구합니다.
 
 ### 제안 솔루션
-**태그 기반의 동적 온톨로지(Ontology) 시스템**을 도입하여, 고정된 계층 구조 대신 유연한 의미론적 네트워크로 문항을 분류합니다. 이를 통해 무한 확장이 가능하고, 시간이 지날수록 학습하며 진화하는 분류 체계를 구축합니다.
+**하이브리드 분류 체계**를 도입합니다:
+
+1. **명확한 메타데이터** (별도 컬럼): 진단 유형(OD/LD/ES), 연도, 회사, 업종 등 변하지 않는 분류 기준
+2. **태그 기반 온톨로지** (JSONB): 조직문화, 리더십, 비전 등 복잡하고 진화하는 의미론적 분류
+
+이를 통해 명확한 구조적 분류와 유연한 의미론적 분류를 동시에 수용하며, 무한 확장이 가능하고 시간이 지날수록 학습하며 진화하는 분류 체계를 구축합니다.
 
 ### 핵심 이점
 | 특성 | 기존 방식 | 제안 방식 |
@@ -402,7 +408,335 @@ category_4: 'CJ-ONLYONE'  -- ❌ 세분류와 회사코드가 혼재
 
 ---
 
-## 3. 제안 솔루션: 태그 기반 동적 온톨로지
+## 3. 제안 솔루션: 하이브리드 분류 체계
+
+### 3.0 계층 구분의 명확화
+
+#### 중요한 깨달음
+분류 체계를 설계할 때 **두 가지 서로 다른 계층**을 혼동하지 않아야 합니다:
+
+#### 계층 1: 명확한 메타데이터 (Structural Metadata)
+```
+특징:
+✅ 명확하고 변하지 않음
+✅ 상호 배타적 (하나만 선택)
+✅ 시간이 지나도 의미 변화 없음
+✅ 쿼리 필터링에 주로 사용
+
+예시:
+- 진단 유형: OD, LD, ES, MA
+- 연도: 2023, 2024, 2025
+- 회사: CJ, 삼성, LG
+- 회사 규모: 대기업, 중견기업, 중소기업, 스타트업
+- 업종: 제조, IT, 금융, 서비스
+- 스케일: LIKERT_5, LIKERT_7
+
+구현 방식:
+→ 일반 SQL 컬럼으로 구현
+→ 별도의 NOT NULL 컬럼
+→ CHECK 제약조건 사용
+→ B-Tree 인덱스
+
+쿼리 예시:
+SELECT * FROM questions
+WHERE diagnosis_type = 'OD'
+  AND year = 2024
+  AND company_code = 'CJ';
+```
+
+#### 계층 2: 의미론적 분류 (Semantic Taxonomy)
+```
+특징:
+⚠️ 복잡하고 계속 진화함
+⚠️ 다차원적 (여러 개 동시 가능)
+⚠️ 시간에 따라 새로운 개념 등장
+⚠️ 의미 기반 검색에 사용
+
+예시:
+- 주제(Themes): 조직문화, 리더십, 전략
+- 개념(Concepts): 비전, 소통, 협력, 혁신
+- 측면(Aspects): 이해도, 만족도, 중요도
+- 대상(Subjects): 조직, 팀, 개인, 리더
+- 트렌드(Trends): DX, ESG, AI, 메타버스
+
+구현 방식:
+→ JSONB 태그 시스템
+→ 배열 형태로 여러 값 저장
+→ 동적으로 확장 가능
+→ GIN 인덱스
+
+쿼리 예시:
+SELECT * FROM questions
+WHERE tags @> '{"concepts": ["비전"]}';
+  -- "비전"과 관련된 모든 개념도 자동 검색
+```
+
+#### 하이브리드 접근법의 장점
+```sql
+-- 구조적 필터 + 의미론적 검색 조합
+SELECT
+    question_id,
+    question_text,
+    tags
+FROM survey.question_tags
+WHERE
+    -- 명확한 메타데이터 필터 (빠른 필터링)
+    diagnosis_type = 'OD'
+    AND year = 2024
+    AND company_code = 'CJ'
+
+    -- 의미론적 태그 검색 (유연한 검색)
+    AND (
+        tags @> '{"concepts": ["리더십"]}'
+        OR tags @> '{"themes": ["조직문화"]}'
+    );
+
+-- 결과: 2024년 CJ 조직진단 중 리더십이나 조직문화 관련 문항
+```
+
+#### 실제 사용 시나리오
+```
+시나리오 1: "2024년 CJ의 리더십 진단 점수"
+→ 명확한 메타데이터: year=2024, company_code='CJ', diagnosis_type='LD'
+→ 필요시 태그: tags @> '{"concepts": ["코칭", "피드백"]}'
+
+시나리오 2: "디지털전환 관련 모든 문항"
+→ 의미론적 태그: tags @> '{"trends": ["DX"]}'
+→ 또는 tags @> '{"concepts": ["디지털전환"]}'
+→ 연도/회사 무관하게 모든 DX 관련 문항 검색
+
+시나리오 3: "2023년과 2024년 비전 관련 점수 비교"
+→ 명확한 메타데이터: year IN (2023, 2024)
+→ 의미론적 태그: tags @> '{"concepts": ["비전"]}'
+→ 온톨로지가 자동으로 "미션", "방향성" 등 관련 개념도 포함
+```
+
+#### 핵심 원칙
+1. **명확하면 컬럼, 복잡하면 태그**
+2. **필터링은 컬럼, 검색은 태그**
+3. **정적이면 컬럼, 동적이면 태그**
+4. **배타적이면 컬럼, 다차원이면 태그**
+
+---
+
+### **[REVISED]** 특수 케이스: 척도(Scale) 정의
+
+#### 문제 재검토: "몰입도 척도 문항의 분포"
+
+**초기 접근 (오류)**:
+```
+❌ 별도 컬럼으로 명시:
+   measurement_purpose = 'engagement_scale'
+   → 또 다른 고정 계층 추가 (확장성 문제)
+
+❌ 의미론적 태그로만:
+   tags @> '{"concepts": ["몰입도"]}'
+   → "몰입도 관련" 모든 문항 포함 (너무 광범위)
+```
+
+**수정된 접근 (온톨로지 관계 기반)**:
+```
+✅ 온톨로지 관계로 척도 정의:
+   "몰입도" --HAS_COMPONENT--> "자긍심"
+   "몰입도" --HAS_COMPONENT--> "소속감"
+   "몰입도" --HAS_COMPONENT--> "조직몰입"
+
+✅ 쿼리시 온톨로지 관계를 따라감:
+   1. 온톨로지에서 "몰입도"의 컴포넌트 추출
+   2. 해당 컴포넌트를 concepts에 가진 문항 검색
+```
+
+#### 핵심 깨달음
+
+**실무 현실**:
+- "이 문항은 몰입도 척도입니다" (X) - 명시적 라벨링 안 함
+- "이 문항들이 의미론적으로 몰입도를 구성한다" (O) - 온톨로지 관계로 정의
+
+**계층 구분**:
+```sql
+-- 예시 문항: "나는 우리 회사에서 일하는 것이 자랑스럽다"
+
+-- ============================================
+-- 계층 1: 구조적 메타데이터 (사실)
+-- ============================================
+diagnosis_type = 'ES'  -- 몰입도 진단
+year = 2024
+company_code = 'CJ'
+industry = '식품'
+
+-- "이 문항은 2024년 CJ 몰입도 진단에서 사용되었다" (사실)
+
+-- ============================================
+-- 계층 2: 의미론적 분류 (개념)
+-- ============================================
+tags = {
+    "concepts": ["자긍심", "조직몰입", "정서적애착"],
+    "aspects": ["만족도", "소속감"],
+    "subjects": ["개인", "조직"]
+}
+
+-- "이 문항은 자긍심, 조직몰입 개념을 다룬다" (의미)
+
+-- ============================================
+-- 온톨로지 관계 (별도 테이블)
+-- ============================================
+taxonomy_relations:
+  "몰입도" --HAS_COMPONENT--> "자긍심"
+  "몰입도" --HAS_COMPONENT--> "소속감"
+  "몰입도" --HAS_COMPONENT--> "조직몰입"
+
+-- "몰입도는 자긍심, 소속감 등으로 구성된다" (관계)
+```
+
+#### 온톨로지 관계 기반 척도 정의
+
+**몰입도 척도의 온톨로지 구조**:
+
+```
+온톨로지 그래프:
+
+"몰입도" (상위 개념/척도)
+    │
+    ├─ HAS_COMPONENT ─> "정서적몰입" (하위 척도)
+    │       ├─ HAS_COMPONENT ─> "자긍심"
+    │       ├─ HAS_COMPONENT ─> "소속감"
+    │       └─ HAS_COMPONENT ─> "정서적애착"
+    │
+    ├─ HAS_COMPONENT ─> "지속적몰입"
+    │       ├─ HAS_COMPONENT ─> "이직비용"
+    │       └─ HAS_COMPONENT ─> "대안부족"
+    │
+    └─ HAS_COMPONENT ─> "규범적몰입"
+            ├─ HAS_COMPONENT ─> "의무감"
+            └─ HAS_COMPONENT ─> "충성도"
+```
+
+#### 실무 프로세스
+
+**1. 문항 생성 및 태깅**:
+```sql
+-- 문항에는 의미론적 태그만 부여
+INSERT INTO question_tags VALUES (
+    'ES-2024-001',
+    '우리 회사에서 일하는 것이 자랑스럽다',
+    'ES', 2024, 'CJ', '식품',
+    '{"concepts": ["자긍심"], "aspects": ["만족도"]}'::jsonb
+);
+```
+
+**2. 온톨로지 관계 정의** (별도 작업):
+```sql
+-- taxonomy_relations 테이블에 관계 정의
+INSERT INTO taxonomy_relations VALUES
+    ('몰입도', '정서적몰입', 'HAS_COMPONENT', 1.0),
+    ('정서적몰입', '자긍심', 'HAS_COMPONENT', 1.0),
+    ('정서적몰입', '소속감', 'HAS_COMPONENT', 1.0),
+    ('정서적몰입', '정서적애착', 'HAS_COMPONENT', 1.0);
+```
+
+**3. 척도 문항 조회**:
+```sql
+-- "몰입도 척도 문항 분포" 쿼리
+WITH RECURSIVE engagement_components AS (
+    -- 기본: 몰입도의 직접 컴포넌트
+    SELECT to_term as component, 1 as level
+    FROM taxonomy_relations
+    WHERE from_term = '몰입도'
+      AND relation_type = 'HAS_COMPONENT'
+
+    UNION ALL
+
+    -- 재귀: 컴포넌트의 하위 컴포넌트
+    SELECT tr.to_term, ec.level + 1
+    FROM taxonomy_relations tr
+    JOIN engagement_components ec ON tr.from_term = ec.component
+    WHERE tr.relation_type = 'HAS_COMPONENT'
+      AND ec.level < 3  -- 최대 깊이 제한
+)
+-- 해당 컴포넌트를 가진 문항들의 분포
+SELECT
+    jsonb_array_elements_text(tags->'concepts') as concept,
+    COUNT(*) as question_count
+FROM question_tags
+WHERE tags->'concepts' ?| (
+    SELECT array_agg(DISTINCT component) FROM engagement_components
+)
+GROUP BY concept
+ORDER BY question_count DESC;
+
+-- 결과:
+-- concept          | question_count
+-- -----------------+---------------
+-- 소속감           | 5
+-- 자긍심           | 4
+-- 정서적애착       | 4
+-- 충성도           | 3
+-- 의무감           | 2
+```
+
+#### 핵심 장점
+
+**1. 유연성**:
+```sql
+-- 2023년 몰입도 정의
+'몰입도' → '자긍심', '소속감', '충성도'
+
+-- 2024년 몰입도 정의 (심리적안전 추가)
+INSERT INTO taxonomy_relations
+VALUES ('정서적몰입', '심리적안전', 'HAS_COMPONENT', 1.0);
+
+-- 문항 데이터 변경 없음! 관계만 추가
+```
+
+**2. 재사용성**:
+```sql
+-- "소속감"은 여러 척도에 사용 가능
+'몰입도' → '정서적몰입' → '소속감'
+'조직문화지수' → '응집력' → '소속감'
+
+-- 같은 개념, 다른 맥락
+```
+
+**3. 의미론적 일관성**:
+```
+"몰입도"도 결국 하나의 concept
+→ 별도 컬럼이 아니라 온톨로지의 일부
+→ PARENT-CHILD 관계와 동일한 체계로 관리
+```
+
+#### 시나리오별 쿼리
+
+**시나리오 1: "2024년 CJ의 몰입도 점수"**
+```sql
+WITH engagement_components AS (
+    -- 온톨로지에서 컴포넌트 추출 (재귀)
+    ...
+)
+SELECT AVG(r.response_value) as engagement_score
+FROM responses r
+JOIN question_tags q ON r.question_id = q.question_id
+WHERE q.year = 2024
+  AND q.company_code = 'CJ'
+  AND q.tags->'concepts' ?| (
+      SELECT array_agg(component) FROM engagement_components
+  );
+```
+
+**시나리오 2: "정서적 몰입만 따로 계산"**
+```sql
+WITH affective_components AS (
+    SELECT to_term as component
+    FROM taxonomy_relations
+    WHERE from_term = '정서적몰입'
+      AND relation_type = 'HAS_COMPONENT'
+)
+SELECT AVG(r.response_value) as affective_score
+FROM responses r
+JOIN question_tags q ON r.question_id = q.question_id
+WHERE q.tags->'concepts' ?| (
+    SELECT array_agg(component) FROM affective_components
+);
+```
 
 ### 3.1 핵심 개념
 
@@ -460,48 +794,88 @@ CREATE TABLE survey.question_tags (
     question_id VARCHAR(50) PRIMARY KEY,
     question_text TEXT NOT NULL,
 
-    -- 다차원 태그 (JSONB로 무한 확장)
+    -- ============================================
+    -- 1. 구조적 메타데이터 (사실 관계)
+    -- ============================================
+    diagnosis_type VARCHAR(20) NOT NULL,  -- OD, LD, ES, MA (진단 유형)
+    year INT,                              -- 진단 연도 (2023, 2024, 2025)
+    company_code VARCHAR(10),              -- 회사 코드 (CJ, SAMS, etc)
+    company_size VARCHAR(20),              -- 회사 규모 (대기업, 중견기업, 중소기업, 스타트업)
+    industry VARCHAR(50),                  -- 업종 (제조, IT, 금융)
+    scale_type VARCHAR(20),                -- LIKERT_5, LIKERT_7 등
+
+    -- ============================================
+    -- 2. 의미론적 태그 (개념/의미)
+    -- ============================================
     tags JSONB NOT NULL,
     /*
     구조:
     {
-        "themes": ["string"],      // 대주제 (조직문화, 리더십 등)
-        "concepts": ["string"],    // 핵심 개념 (비전, 소통, 협력 등)
-        "aspects": ["string"],     // 측정 측면 (이해도, 만족도, 중요도 등)
-        "subjects": ["string"],    // 평가 대상 (조직, 팀, 개인, 리더 등)
-        "methods": ["string"],     // 평가 방법 (자기평가, 타인평가 등)
-        "industries": ["string"],  // 업종 특화 (제조, IT, 금융 등)
-        "companies": ["string"],   // 회사 특화 (CJ, SAMS 등)
-        "trends": ["string"],      // 시대적 트렌드 (DX, ESG, AI 등)
-        "levels": ["string"],      // 조직 레벨 (임원, 관리자, 팀원 등)
-        "custom": {                // 기타 자유 태그
-            "key": "value"
+        "themes": ["조직문화", "리더십"],     // 대주제 (의미론적)
+        "concepts": ["비전", "소통", "협력"], // 핵심 개념 (의미론적)
+        "aspects": ["이해도", "만족도"],      // 측정 측면 (의미론적)
+        "subjects": ["조직", "팀", "리더"],   // 평가 대상 (의미론적)
+        "methods": ["자기평가", "타인평가"],  // 평가 방법 (의미론적)
+        "trends": ["DX", "ESG", "AI"],       // 시대적 트렌드
+        "custom": {                          // 회사별 특수 태그
+            "cj_core_value": "ONLYONE",
+            "custom_category": "..."
         }
     }
+
+    NOTE:
+    - 명확한 분류(연도, 회사, 업종)는 별도 컬럼
+    - 복잡하고 진화하는 의미론적 분류는 JSONB 태그
+    - 척도 정의는 taxonomy_relations 테이블의 온톨로지 관계로 처리
     */
 
-    -- 메타데이터
-    diagnosis_type VARCHAR(20),  -- OD, LD, ES
-    scale_type VARCHAR(20),      -- LIKERT_5, LIKERT_7 등
-    is_reverse BOOLEAN DEFAULT FALSE,
-
-    -- 검색 최적화
+    -- ============================================
+    -- 3. 검색 최적화
+    -- ============================================
     tag_search_vector tsvector GENERATED ALWAYS AS (
         to_tsvector('korean', tags::text || ' ' || question_text)
     ) STORED,
 
-    -- 자동 분류 메타
+    -- ============================================
+    -- 4. 자동 분류 메타데이터
+    -- ============================================
     auto_tagged BOOLEAN DEFAULT FALSE,
     tag_confidence FLOAT,  -- 0-1, 자동 태깅 신뢰도
 
     created_at TIMESTAMP DEFAULT NOW(),
-    updated_at TIMESTAMP DEFAULT NOW()
+    updated_at TIMESTAMP DEFAULT NOW(),
+
+    -- ============================================
+    -- 5. 제약조건
+    -- ============================================
+    CONSTRAINT valid_diagnosis_type CHECK (
+        diagnosis_type IN ('OD', 'LD', 'ES', 'MA')
+    ),
+    CONSTRAINT valid_year CHECK (
+        year IS NULL OR (year >= 2000 AND year <= 2100)
+    )
 );
 
+-- ============================================
 -- 인덱스
-CREATE INDEX idx_tags_gin ON survey.question_tags USING GIN(tags);
-CREATE INDEX idx_tag_search ON survey.question_tags USING GIN(tag_search_vector);
+-- ============================================
+-- 1. 구조적 메타데이터 인덱스 (빠른 필터링)
 CREATE INDEX idx_diagnosis_type ON survey.question_tags(diagnosis_type);
+CREATE INDEX idx_year ON survey.question_tags(year);
+CREATE INDEX idx_company ON survey.question_tags(company_code);
+CREATE INDEX idx_company_size ON survey.question_tags(company_size);
+CREATE INDEX idx_industry ON survey.question_tags(industry);
+
+-- 복합 인덱스 (자주 사용하는 조합)
+CREATE INDEX idx_diagnosis_year ON survey.question_tags(diagnosis_type, year);
+CREATE INDEX idx_company_year ON survey.question_tags(company_code, year);
+CREATE INDEX idx_size_industry ON survey.question_tags(company_size, industry);
+
+-- 2. JSONB 태그 인덱스 (의미론적 검색)
+CREATE INDEX idx_tags_gin ON survey.question_tags USING GIN(tags);
+
+-- 3. 전문 검색 인덱스
+CREATE INDEX idx_tag_search ON survey.question_tags USING GIN(tag_search_vector);
 ```
 
 #### 온톨로지 테이블: taxonomy
@@ -1824,15 +2198,21 @@ Week 9: 전환 및 교육
 **문제의 본질**
 설문 문항 분류는 수백~수천 가지 조합이 가능하고 지속적으로 진화하는 복잡한 도메인입니다. 고정된 계층 구조로는 이러한 복잡성과 동적 특성을 수용할 수 없습니다.
 
-**제안 솔루션**
-태그 기반 동적 온톨로지 시스템은 유연하고 확장 가능하며 진화하는 분류 체계를 제공합니다. 초기 구축 비용이 있지만, 장기적으로 유지보수 비용을 대폭 절감하고 시스템 품질을 향상시킵니다.
+**제안 솔루션: 하이브리드 접근법**
+두 가지 계층을 명확히 구분합니다:
+
+1. **구조적 메타데이터** (일반 SQL 컬럼): 진단 유형, 연도, 회사, 업종 등 명확하고 변하지 않는 분류
+2. **의미론적 온톨로지** (JSONB 태그): 조직문화, 리더십, 비전 등 복잡하고 진화하는 분류
+
+이를 통해 빠른 필터링과 유연한 의미 검색을 동시에 확보합니다.
 
 **핵심 이점**
-1. 무한 확장성 - 새로운 개념 즉시 추가
-2. 다차원 분류 - 한 문항이 여러 차원에 동시 속함
-3. 의미 기반 검색 - 관련 개념 자동 검색
-4. 자동 학습 - 사용할수록 똑똑해짐
-5. 장기 비용 절감 - 연간 5주 개발 시간 절약
+1. **명확한 구조** - 진단 유형/연도/회사는 별도 컬럼으로 빠르게 필터링
+2. **무한 확장성** - 새로운 의미론적 개념 즉시 추가 (태그)
+3. **다차원 분류** - 한 문항이 여러 의미 차원에 동시 속함
+4. **의미 기반 검색** - 관련 개념 자동 검색 (온톨로지)
+5. **하이브리드 쿼리** - 구조적 필터 + 의미 검색 조합 가능
+6. **장기 비용 절감** - 연간 5주 개발 시간 절약
 
 ### 8.2 권고사항
 
@@ -1930,8 +2310,396 @@ A: PostgreSQL JSONB는 매우 최적화되어 있으며, 적절한 인덱싱으�
 **Q: 다른 회사도 이런 방식을 쓰나요?**
 A: Google, Facebook 등 대형 기술 기업들이 콘텐츠 분류에 유사한 태그/온톨로지 기반 시스템을 사용합니다.
 
+**Q: 회사 코드와 회사별 특수 태그의 차이는?**
+A:
+- `company_code`: 어느 회사의 진단인지 (메타데이터) → 별도 컬럼
+- `tags.custom.cj_core_value`: CJ의 핵심가치 "ONLYONE" 개념 포함 여부 (의미론적) → JSONB 태그
+
+**Q: 연도와 트렌드의 차이는?**
+A:
+- `year`: 몇 년도에 실행된 진단인지 (사실) → 별도 컬럼
+- `tags.trends`: "DX", "ESG" 같은 시대적 트렌드 개념 포함 여부 (의미) → JSONB 태그
+
+### 9.4 실전 예시
+
+#### 예시 1: 2024년 CJ 조직진단 문항
+```sql
+INSERT INTO survey.question_tags VALUES (
+    'OD-CJ-2024-VIS-001',
+    'CJ의 ONLYONE 비전을 명확히 이해하고 있습니까?',
+
+    -- 명확한 메타데이터 (별도 컬럼)
+    'OD',              -- diagnosis_type
+    2024,              -- year
+    'CJ',              -- company_code
+    '식품',            -- industry
+    'LIKERT_5',        -- scale_type
+    FALSE,             -- is_reverse
+
+    -- 의미론적 태그 (JSONB)
+    '{
+        "themes": ["조직문화", "전략"],
+        "concepts": ["비전", "핵심가치"],
+        "aspects": ["이해도", "명확성"],
+        "subjects": ["조직"],
+        "methods": ["자기평가"],
+        "custom": {
+            "cj_core_value": "ONLYONE"
+        }
+    }'::jsonb,
+
+    FALSE,  -- auto_tagged
+    0.95    -- tag_confidence
+);
+```
+
+#### 예시 2: 2025년 IT업종 디지털전환 리더십 문항
+```sql
+INSERT INTO survey.question_tags VALUES (
+    'LD-IT-2025-DX-001',
+    '리더가 팀원의 AI 활용 역량을 코칭하고 있습니까?',
+
+    -- 명확한 메타데이터
+    'LD',              -- diagnosis_type (리더십 진단)
+    2025,              -- year
+    'TECH001',         -- company_code
+    'IT',              -- industry
+    'LIKERT_7',        -- scale_type
+    FALSE,             -- is_reverse
+
+    -- 의미론적 태그
+    '{
+        "themes": ["리더십", "디지털전환"],
+        "concepts": ["코칭", "역량개발", "AI활용"],
+        "aspects": ["실행력", "빈도"],
+        "subjects": ["리더", "팀원"],
+        "methods": ["타인평가"],
+        "trends": ["AI", "DX"]
+    }'::jsonb,
+
+    TRUE,   -- auto_tagged
+    0.88    -- tag_confidence
+);
+```
+
+#### 예시 3: 쿼리 비교
+
+**잘못된 방식 (모두 태그)**:
+```sql
+-- ❌ 나쁜 예: 연도도 태그에 넣기
+tags: {
+    "year": 2024,  -- 이건 별도 컬럼으로 해야 함!
+    "concepts": ["비전"]
+}
+```
+
+**올바른 방식 (하이브리드)**:
+```sql
+-- ✅ 좋은 예: 명확한 것은 컬럼, 의미론적인 것은 태그
+WHERE year = 2024  -- 컬럼 필터 (빠름)
+  AND tags @> '{"concepts": ["비전"]}'  -- 태그 검색 (유연함)
+```
+
 ---
 
 **문서 종료**
 
 문의사항이나 추가 논의가 필요하신 경우 언제든지 연락 주시기 바랍니다.
+
+**핵심 원칙 재정리**:
+- 진단 유형, 연도, 회사 → **별도 컬럼** (명확한 메타데이터)
+- 조직문화, 리더십, 비전 → **JSONB 태그** (의미론적 온톨로지)
+- 몰입도 척도, 리더십 지수 → **온톨로지 관계** (HAS_COMPONENT)
+- 두 계층을 혼동하지 말 것!
+
+---
+
+## 10. 방법론적 결정이 필요한 이슈들
+
+본 섹션은 시스템 구현 전에 방법론적으로 논의하고 결정해야 할 사항들입니다.
+
+### Issue #1: 온톨로지 관계 타입 정의
+
+**배경**:
+척도-컴포넌트 관계를 정의할 때 relation_type을 어떻게 명명할 것인가?
+
+**옵션**:
+1. `HAS_COMPONENT`
+   - "몰입도는 자긍심을 컴포넌트로 가진다"
+   - 장점: 명확함, 기술적
+   - 단점: 다소 추상적
+
+2. `MEASURED_BY`
+   - "몰입도는 자긍심으로 측정된다"
+   - 장점: 측정 관점에서 직관적
+   - 단점: 방향성 혼동 가능 (몰입도→자긍심 vs 자긍심→몰입도)
+
+3. `CONSISTS_OF`
+   - "몰입도는 자긍심으로 구성된다"
+   - 장점: 자연스러운 표현
+   - 단점: COMPONENT와 의미 중복
+
+4. `CALCULATED_FROM`
+   - "몰입도는 자긍심으로부터 계산된다"
+   - 장점: 계산 관점 명확
+   - 단점: "계산"이라는 용어가 기술적 구현에 치우침
+
+**결정 필요 사항**:
+- 용어 선택 및 표준화
+- 다른 기존 relation_type (PARENT, CHILD, RELATED)과의 일관성
+- 역관계(inverse relation) 필요 여부
+
+---
+
+### Issue #2: 척도 계산 가중치 관리
+
+**배경**:
+척도 계산 시 각 컴포넌트의 가중치를 어디에 저장하고 관리할 것인가?
+
+**시나리오**:
+```
+몰입도 점수 = (자긍심 × 0.3) + (소속감 × 0.25) + (충성도 × 0.25) + (의무감 × 0.2)
+```
+
+**옵션**:
+
+**Option 1: taxonomy_relations.metadata JSONB**
+```sql
+INSERT INTO taxonomy_relations VALUES
+    ('몰입도', '자긍심', 'HAS_COMPONENT', 1.0, '{"weight": 0.3}'::jsonb);
+```
+- 장점: 관계와 가중치를 함께 관리
+- 단점: JSONB 쿼리 복잡도 증가
+
+**Option 2: 별도 테이블 (scale_definitions)**
+```sql
+CREATE TABLE scale_definitions (
+    scale_name VARCHAR(100),
+    component_name VARCHAR(100),
+    weight FLOAT,
+    valid_from INT,
+    valid_until INT
+);
+```
+- 장점: 명확한 구조, 시간 버전 관리 쉬움
+- 단점: 테이블 추가, taxonomy_relations와 중복
+
+**Option 3: 애플리케이션 레이어**
+```python
+# config.py
+SCALE_WEIGHTS = {
+    "몰입도": {
+        "자긍심": 0.3,
+        "소속감": 0.25,
+        ...
+    }
+}
+```
+- 장점: 빠른 변경, 코드 리뷰 가능
+- 단점: DB와 분리, 버전 히스토리 관리 어려움
+
+**결정 필요 사항**:
+- 저장 위치
+- 가중치 변경 시 기존 계산 결과에 대한 영향도
+- 감사(audit) 요구사항
+
+---
+
+### Issue #3: 시간에 따른 척도 정의 변화 추적
+
+**배경**:
+척도를 구성하는 컴포넌트가 시간에 따라 변경될 때 히스토리를 어떻게 관리할 것인가?
+
+**시나리오**:
+```
+2023년 몰입도 = {자긍심(0.3), 소속감(0.3), 충성도(0.4)}
+2024년 몰입도 = {자긍심(0.25), 소속감(0.25), 충성도(0.25), 심리적안전(0.25)}
+```
+
+**요구사항**:
+- 과거 시점의 점수를 재계산할 수 있어야 함
+- 2023년과 2024년 점수를 비교할 때 정의 변화를 고려해야 함
+
+**옵션**:
+
+**Option 1: relation에 유효기간**
+```sql
+ALTER TABLE taxonomy_relations ADD COLUMN valid_from INT;
+ALTER TABLE taxonomy_relations ADD COLUMN valid_until INT;
+
+-- 2023년 정의
+INSERT VALUES ('몰입도', '자긍심', 'HAS_COMPONENT', 1.0,
+               '{"weight": 0.3}', 2023, 2023);
+
+-- 2024년 정의 (가중치 변경)
+INSERT VALUES ('몰입도', '자긍심', 'HAS_COMPONENT', 1.0,
+               '{"weight": 0.25}', 2024, NULL);
+```
+- 장점: 같은 테이블에서 시간 추적
+- 단점: 쿼리 복잡도 증가
+
+**Option 2: 버전 관리 테이블**
+```sql
+CREATE TABLE scale_versions (
+    scale_name VARCHAR(100),
+    version INT,
+    year INT,
+    definition JSONB  -- 전체 컴포넌트와 가중치
+);
+```
+- 장점: 버전 단위로 명확한 스냅샷
+- 단점: 온톨로지와 분리
+
+**Option 3: taxonomy_evolution 테이블 활용**
+```sql
+-- 기존 evolution 테이블에 change_type='REWEIGHTED' 추가
+INSERT INTO taxonomy_evolution VALUES
+    ('몰입도', 'REWEIGHTED',
+     '{"components": {"자긍심": 0.3}}',
+     '{"components": {"자긍심": 0.25}}',
+     '2024년 가중치 조정');
+```
+- 장점: 변경 이력을 명시적으로 추적
+- 단점: 특정 시점 정의 재구성이 복잡
+
+**결정 필요 사항**:
+- 시간 버전 관리 방식
+- 과거 시점 재현 요구사항 수준
+- 연도별 비교 분석 방법론
+
+---
+
+### Issue #4: 역코딩(Reverse Scoring) 처리
+
+**배경**:
+부정 문항("나는 이직하고 싶다")의 역코딩을 어느 계층에서 처리할 것인가?
+
+**문항 예시**:
+```
+정방향: "우리 회사에서 일하는 것이 자랑스럽다" (5점 = 매우 그렇다)
+역방향: "나는 이 회사를 떠나고 싶다" (5점 = 매우 그렇다 → 역코딩 필요)
+```
+
+**옵션**:
+
+**Option 1: 구조적 메타데이터 (컬럼)**
+```sql
+ALTER TABLE question_tags ADD COLUMN is_reverse_scored BOOLEAN DEFAULT FALSE;
+```
+- 논리: 역코딩은 사실(fact)이다. "이 문항은 역코딩이 필요하다"
+- 장점: 명확하고 빠른 필터링
+- 단점: 또 다른 고정 컬럼 추가
+
+**Option 2: 의미론적 태그**
+```json
+{
+    "concepts": ["이직의도"],
+    "aspects": ["역문항"],  // 또는
+    "scoring": {"reverse": true}
+}
+```
+- 논리: 역코딩은 의미론적 특성이다
+- 장점: 태그 체계 내에서 일관성
+- 단점: 계산 로직과 의미를 혼동
+
+**Option 3: 온톨로지 관계 메타데이터**
+```sql
+-- "이직의도"는 "몰입도"와 역관계
+INSERT INTO taxonomy_relations VALUES
+    ('몰입도', '이직의도', 'HAS_COMPONENT', -1.0);  -- 음수 강도 = 역관계
+```
+- 논리: 역관계는 개념 간의 관계
+- 장점: 의미론적으로 정확
+- 단점: 문항 레벨이 아닌 개념 레벨에서만 정의
+
+**결정 필요 사항**:
+- 역코딩의 본질: 사실인가, 의미인가, 관계인가?
+- 문항 레벨 vs 개념 레벨 정의
+- 계산 로직과의 연계
+
+---
+
+### Issue #5: 온톨로지 관계의 강도(Strength) 활용
+
+**배경**:
+현재 `taxonomy_relations.strength FLOAT` 컬럼이 있지만 용도가 불명확합니다.
+
+**가능한 용도**:
+
+**Option 1: 가중치로 활용**
+```sql
+('몰입도', '자긍심', 'HAS_COMPONENT', 0.3)  -- strength = weight
+```
+- 장점: 기존 컬럼 활용
+- 단점: strength의 의미가 다른 relation_type마다 다름
+
+**Option 2: 관계의 확신도**
+```sql
+('리더십', '코칭', 'RELATED', 0.9)  -- 90% 확신
+('리더십', '권한위임', 'RELATED', 0.7)  -- 70% 확신
+```
+- 장점: 자동 태깅 시 유용
+- 단점: 척도 계산 가중치와 별도 필드 필요
+
+**Option 3: 사용 안 함 (항상 1.0)**
+- 가중치는 metadata JSONB 사용
+- strength는 reserved for future use
+
+**결정 필요 사항**:
+- strength 컬럼의 정확한 의미 정의
+- 가중치와의 관계
+- 기본값 규칙
+
+---
+
+### Issue #6: 다중 척도 소속 처리
+
+**배경**:
+하나의 개념이 여러 척도에 동시에 속할 수 있습니다.
+
+**시나리오**:
+```
+"소속감" 개념:
+  - 몰입도 척도의 컴포넌트 (가중치 0.25)
+  - 조직문화지수의 컴포넌트 (가중치 0.15)
+  - 팀워크 점수의 컴포넌트 (가중치 0.3)
+```
+
+**문제**:
+같은 "소속감" 문항들이 여러 척도 계산에 사용됨. 이것이 의도된 것인가?
+
+**옵션**:
+
+**Option 1: 허용 (현재 설계)**
+- 하나의 개념이 여러 척도에 기여 가능
+- 온톨로지에서 여러 관계 정의
+- 장점: 유연함
+- 단점: 척도 간 독립성 저하
+
+**Option 2: 제한 (세부 개념 분리)**
+```
+"소속감" → 너무 일반적
+"조직소속감" → 몰입도용
+"팀소속감" → 팀워크용
+```
+- 장점: 척도 간 명확한 분리
+- 단점: 개념 증식, 온톨로지 복잡도 증가
+
+**결정 필요 사항**:
+- 다중 척도 소속 허용 여부
+- 허용 시 가중치 설정 원칙
+- 척도 간 상관관계 관리
+
+---
+
+### 결론
+
+이상의 이슈들은 **기술 구현 전에 도메인 전문가와 논의하여 방법론적으로 결정**되어야 합니다.
+
+각 이슈에 대한 결정은:
+1. 비즈니스 요구사항
+2. 데이터 특성
+3. 분석 패턴
+4. 유지보수 편의성
+
+을 종합적으로 고려하여 이루어져야 합니다.
